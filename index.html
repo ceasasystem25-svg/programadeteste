@@ -23,14 +23,14 @@
     <div id="loading" class="fixed inset-0 bg-blue-600 z-[100] flex flex-col items-center justify-center text-white transition-opacity duration-500">
         <i class="fa-solid fa-wallet text-6xl mb-4 animate-bounce"></i>
         <h1 class="text-2xl font-black tracking-wider">Finanças Pro</h1>
-        <p class="text-sm opacity-80 mt-2 flex items-center"><i class="fa-solid fa-spinner fa-spin mr-2"></i> Iniciando app zerado...</p>
+        <p class="text-sm opacity-80 mt-2 flex items-center"><i class="fa-solid fa-spinner fa-spin mr-2"></i> Sincronizando banco de dados...</p>
     </div>
 
     <header class="bg-blue-600 text-white p-4 shadow-md sticky top-0 z-40">
         <div class="max-w-md mx-auto flex justify-between items-center">
             <h1 class="text-xl font-bold"><i class="fa-solid fa-wallet mr-2"></i>Finanças Leandro</h1>
             <div class="flex items-center space-x-3">
-                <i id="icone-nuvem" class="fa-solid fa-cloud text-blue-300 text-xs" title="Sincronizado"></i>
+                <i id="icone-nuvem" class="fa-solid fa-cloud-slash text-red-300 text-xs" title="Offline"></i>
                 <span id="data-atual" class="text-sm font-medium opacity-90"></span>
             </div>
         </div>
@@ -428,60 +428,91 @@
             }
         }
 
+        function fecharTelaAzul() {
+            document.getElementById('loading').style.opacity = '0';
+            setTimeout(() => document.getElementById('loading').classList.add('hidden'), 500);
+        }
+
         async function iniciarFirebase() {
-            // Limpa dados antigos locais que pudessem quebrar os tipos
+            // Limpa dados com formatos antigos corrompidos
             localStorage.removeItem('transacoes_v9');
             localStorage.removeItem('contasBancarias_v9');
             localStorage.removeItem('contasPagar_v9');
             
-            transacoes = [];
-            contasBancarias = [{ id: 'din', nome: '💵 Dinheiro em Espécie', saldoInicial: 0 }];
-            contasPagar = [];
+            // Puxa do cache local caso já tenha dados da v10
+            transacoes = JSON.parse(localStorage.getItem('transacoes_v10')) || [];
+            if(localStorage.getItem('contasBancarias_v10')) {
+                contasBancarias = JSON.parse(localStorage.getItem('contasBancarias_v10'));
+            } else {
+                contasBancarias = [{ id: 'din', nome: '💵 Dinheiro em Espécie', saldoInicial: 0 }];
+            }
+            contasPagar = JSON.parse(localStorage.getItem('contasPagar_v10')) || [];
             
-            atualizarInterfaceGlobal(); 
-
             if(localStorage.getItem('meta_economia_leandro')) {
                 document.getElementById('input-meta').value = localStorage.getItem('meta_economia_leandro');
             }
+
+            atualizarInterfaceGlobal(); 
+
+            // MECANISMO DE DEFESA (TIMEOUT): Se o Firebase travar ou der erro por mais de 3 segundos, o app abre localmente.
+            const timeoutSeguranca = setTimeout(() => {
+                console.warn("Firebase demorou demais. Iniciando em modo local.");
+                fecharTelaAzul();
+            }, 3000);
 
             try {
                 firebase.initializeApp(firebaseConfig);
                 db = firebase.firestore(); 
                 firebaseAtivo = true;
                 
-                const docRef = db.collection('app_financas').doc('meus_dados_v9');
+                // ALTERAÇÃO: Criamos um documento totalmente novo (meus_dados_v10) ignorando travas antigas do Firestore
+                const docRef = db.collection('app_financas').doc('meus_dados_v10');
+                const docSnap = await docRef.get();
                 
-                // Sobrescreve a nuvem com o banco zerado estruturado
-                await docRef.set({ transacoes, contasBancarias, contasPagar });
+                if (docSnap.exists) {
+                    const dadosNuvem = docSnap.data(); 
+                    transacoes = dadosNuvem.transacoes || []; 
+                    contasBancarias = dadosNuvem.contasBancarias || contasBancarias; 
+                    contasPagar = dadosNuvem.contasPagar || [];
+                } else {
+                    await docRef.set({ transacoes, contasBancarias, contasPagar });
+                }
                 
-                document.getElementById('icone-nuvem').classList.replace('text-blue-300', 'text-green-400');
+                // Salva na v10 local também
+                localStorage.setItem('transacoes_v10', JSON.stringify(transacoes));
+                localStorage.setItem('contasBancarias_v10', JSON.stringify(contasBancarias));
+                localStorage.setItem('contasPagar_v10', JSON.stringify(contasPagar));
+
+                document.getElementById('icone-nuvem').className = "fa-solid fa-cloud text-green-400 text-xs";
+                document.getElementById('icone-nuvem').title = "Sincronizado com Firebase";
+                
+                clearTimeout(timeoutSeguranca);
+                fecharTelaAzul();
+                atualizarInterfaceGlobal();
             } catch(e) { 
-                console.error("Erro no Firebase", e); 
-            } finally {
-                // Remove o loader garantindo que a tela azul suma
-                document.getElementById('loading').style.opacity = '0';
-                setTimeout(() => document.getElementById('loading').classList.add('hidden'), 500);
+                console.error("Erro na conexão com Firebase. Rodando local offline.", e); 
+                clearTimeout(timeoutSeguranca);
+                fecharTelaAzul();
             }
         }
 
-        function carregarDadosLocais() { }
-
         function salvarEAtualizar() {
-            localStorage.setItem('transacoes_v9', JSON.stringify(transacoes)); 
-            localStorage.setItem('contasBancarias_v9', JSON.stringify(contasBancarias)); 
-            localStorage.setItem('contasPagar_v9', JSON.stringify(contasPagar));
+            localStorage.setItem('transacoes_v10', JSON.stringify(transacoes)); 
+            localStorage.setItem('contasBancarias_v10', JSON.stringify(contasBancarias)); 
+            localStorage.setItem('contasPagar_v10', JSON.stringify(contasPagar));
             
             if(firebaseAtivo && db) {
-                document.getElementById('icone-nuvem').classList.replace('fa-cloud', 'fa-arrows-rotate'); 
-                document.getElementById('icone-nuvem').classList.add('fa-spin');
+                document.getElementById('icone-nuvem').className = "fa-solid fa-arrows-rotate fa-spin text-blue-400 text-xs"; 
                 
-                db.collection('app_financas').doc('meus_dados_v9').set({ transacoes, contasBancarias, contasPagar })
+                db.collection('app_financas').doc('meus_dados_v10').set({ transacoes, contasBancarias, contasPagar })
                 .then(() => {
                     setTimeout(() => { 
-                        document.getElementById('icone-nuvem').classList.remove('fa-spin', 'fa-arrows-rotate'); 
-                        document.getElementById('icone-nuvem').classList.add('fa-cloud'); 
+                        document.getElementById('icone-nuvem').className = "fa-solid fa-cloud text-green-400 text-xs"; 
                     }, 500);
-                }).catch(e => console.error(e));
+                }).catch(e => {
+                    console.error(e);
+                    document.getElementById('icone-nuvem').className = "fa-solid fa-cloud-slash text-red-400 text-xs";
+                });
             }
             atualizarInterfaceGlobal();
         }
@@ -692,7 +723,6 @@
             conta.statusMes = mesAtualStr; conta.transacaoId = idNovaTransacao; 
             let descricaoLcto = `Pgto: ${conta.nome}`; if(conta.tipo === 'parcelada') { conta.parcelasPagas += 1; descricaoLcto += ` (${conta.parcelasPagas}/${conta.totalParcelas})`; }
             
-            // CORRIGIDO: de 'category' para 'categoria' para manter padrão pt-BR
             transacoes.unshift({ id: idNovaTransacao, tipo: 'despesa', valor: conta.valor, descricao: descricaoLcto, categoria: 'Contas / Parcelas', contaId: bancoIdSelecionado, contaNome: obterNomeConta(bancoIdSelecionado), data: dataHoje.toISOString().split('T')[0] });
             transacoes.sort((a,b) => new Date(b.data || a.id) - new Date(a.data || b.id));
             fecharModalFixo(); salvarEAtualizar();
@@ -893,12 +923,12 @@
             const valorMeta = parseFloat(document.getElementById('input-meta').value) || 0;
             if(valorMeta > 0) {
                 document.getElementById('container-meta-progresso').classList.remove('hidden');
-                const economiaReal = Math.max(0, sobraNoMesFiltrado);
-                const pctMeta = Math.min(100, (economiaReal / valorMeta) * 100).toFixed(0);
+                const economyReal = Math.max(0, sobraNoMesFiltrado);
+                const pctMeta = Math.min(100, (economyReal / valorMeta) * 100).toFixed(0);
                 
                 document.getElementById('barra-meta').style.width = `${pctMeta}%`;
                 document.getElementById('txt-meta-progresso').innerText = `Progresso: ${pctMeta}%`;
-                document.getElementById('txt-meta-valores').innerText = `${formatarMoeda(economiaReal)} / ${formatarMoeda(valorMeta)}`;
+                document.getElementById('txt-meta-valores').innerText = `${formatarMoeda(economyReal)} / ${formatarMoeda(valorMeta)}`;
             } else {
                 document.getElementById('container-meta-progresso').classList.add('hidden');
             }
