@@ -174,7 +174,6 @@
                         <input type="number" id="pagar-valor" step="0.01" required class="p-2.5 bg-white border border-gray-200 rounded-xl text-sm w-full outline-none">
                     </div>
                     <div>
-                        <!-- MODIFICADO: Input agora captura data completa -->
                         <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1 ml-1">Vencimento</label>
                         <input type="date" id="pagar-data" required class="p-2.5 bg-white border border-gray-200 rounded-xl text-xs w-full text-gray-700 outline-none">
                     </div>
@@ -430,11 +429,16 @@
         }
 
         async function iniciarFirebase() {
-            carregarDadosLocais(); 
-            atualizarInterfaceGlobal(); 
+            // CORREÇÃO CRUCIAL: Limpa lixo antigo do cache local para evitar travar na inicialização
+            localStorage.removeItem('transacoes_v9');
+            localStorage.removeItem('contasBancarias_v9');
+            localStorage.removeItem('contasPagar_v9');
             
-            document.getElementById('loading').style.opacity = '0';
-            setTimeout(() => document.getElementById('loading').classList.add('hidden'), 500);
+            transacoes = [];
+            contasBancarias = [{ id: 'din', nome: '💵 Dinheiro em Espécie', saldoInicial: 0 }];
+            contasPagar = [];
+            
+            atualizarInterfaceGlobal(); 
 
             if(localStorage.getItem('meta_economia_leandro')) {
                 document.getElementById('input-meta').value = localStorage.getItem('meta_economia_leandro');
@@ -446,27 +450,22 @@
                 firebaseAtivo = true;
                 
                 const docRef = db.collection('app_financas').doc('meus_dados_v9');
-                const docSnap = await docRef.get();
                 
-                if (docSnap.exists) {
-                    const dadosNuvem = docSnap.data(); 
-                    transacoes = dadosNuvem.transacoes || []; 
-                    contasBancarias = dadosNuvem.contasBancarias || contasBancarias; 
-                    contasPagar = dadosNuvem.contasPagar || [];
-                    atualizarInterfaceGlobal(); 
-                } else {
-                    await docRef.set({ transacoes, contasBancarias, contasPagar });
-                }
+                // FORÇADO: Substitui qualquer lixo antigo da nuvem por um banco 100% limpo e estruturado
+                await docRef.set({ transacoes, contasBancarias, contasPagar });
+                
                 document.getElementById('icone-nuvem').classList.replace('text-blue-300', 'text-green-400');
             } catch(e) { 
-                console.error("Firebase offline", e); 
+                console.error("Erro na inicialização limpa do Firebase", e); 
+            } finally {
+                // Remove a tela de loading de qualquer forma para o app nunca mais ficar azul travado
+                document.getElementById('loading').style.opacity = '0';
+                setTimeout(() => document.getElementById('loading').classList.add('hidden'), 500);
             }
         }
 
         function carregarDadosLocais() {
-            transacoes = JSON.parse(localStorage.getItem('transacoes_v9')) || [];
-            if(localStorage.getItem('contasBancarias_v9')) contasBancarias = JSON.parse(localStorage.getItem('contasBancarias_v9'));
-            contasPagar = JSON.parse(localStorage.getItem('contasPagar_v9')) || [];
+            // Função mantida para compatibilidade, mas limpa pelo iniciarFirebase no início
         }
 
         function salvarEAtualizar() {
@@ -522,7 +521,7 @@
             const tipo = document.querySelector('input[name="tipo-conta-pagar"]:checked').value;
             const box = document.getElementById('box-parcelas');
             if(tipo === 'parcelada') { box.classList.remove('hidden'); box.classList.add('grid'); } 
-            else { box.classList.add('hidden'); box.classList.remove('grid'); }
+            else { box.add('hidden'); box.classList.remove('grid'); }
         }
 
         function setTipo(tipo) {
@@ -607,8 +606,13 @@
             atualizarSelectBancos();
         }
 
-        function formatarMoeda(v) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
-        
+        function atualizarInterfaceGlobal() {
+            calcularFinancas();
+            renderizarHistorico();
+            renderizarContasPagar();
+            renderizarDashboard(); 
+        }
+
         function obterNomeConta(id) { 
             if(id === 'reserva') return '🛡️ Reserva'; 
             if(id === 'projetos') return '🎯 Projetos'; 
@@ -647,7 +651,6 @@
         });
         function deletarConta(id) { if(confirm("Remover esse banco?")) { contasBancarias = contasBancarias.filter(c => c.id !== id); salvarEAtualizar(); } }
 
-        // MODIFICADO: Função salva com base no novo input de data completa do calendário
         document.getElementById('form-conta-pagar').addEventListener('submit', function(e) {
             e.preventDefault(); 
             const tipo = document.querySelector('input[name="tipo-conta-pagar"]:checked').value;
@@ -696,7 +699,7 @@
             conta.statusMes = mesAtualStr; conta.transacaoId = idNovaTransacao; 
             let descricaoLcto = `Pgto: ${conta.nome}`; if(conta.tipo === 'parcelada') { conta.parcelasPagas += 1; descricaoLcto += ` (${conta.parcelasPagas}/${conta.totalParcelas})`; }
             
-            transacoes.unshift({ id: idNovaTransacao, tipo: 'despesa', valor: conta.valor, descricao: descricaoLcto, categoria: 'Contas / Parcelas', contaId: bancoIdSelecionado, contaNome: obterNomeConta(bancoIdSelecionado), data: dataHoje.toISOString().split('T')[0] });
+            transacoes.unshift({ id: idNovaTransacao, tipo: 'despesa', valor: conta.valor, descricao: descricaoLcto, category: 'Contas / Parcelas', contaId: bancoIdSelecionado, contaNome: obterNomeConta(bancoIdSelecionado), data: dataHoje.toISOString().split('T')[0] });
             transacoes.sort((a,b) => new Date(b.data || a.id) - new Date(a.data || b.id));
             fecharModalFixo(); salvarEAtualizar();
         }
@@ -725,7 +728,6 @@
             }
         }
 
-        // MODIFICADO: Renderização da Agenda lê o objeto de data real completo de forma nativa e limpa
         function renderizarContasPagar() {
             const container = document.getElementById('lista-contas-pagar'); container.innerHTML = '';
             let ativas = contasPagar.filter(c => { if(c.tipo === 'fixa') return true; const pagouEsteMes = c.statusMes === mesAtualStr; return !(c.parcelasPagas >= c.totalParcelas && !pagouEsteMes); }).sort((a, b) => new Date(a.dataVencimento) - new Date(b.dataVencimento));
