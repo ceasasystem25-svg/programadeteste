@@ -174,8 +174,9 @@
                         <input type="number" id="pagar-valor" step="0.01" required class="p-2.5 bg-white border border-gray-200 rounded-xl text-sm w-full outline-none">
                     </div>
                     <div>
+                        <!-- MODIFICADO: Input agora captura data completa -->
                         <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1 ml-1">Vencimento</label>
-                        <input type="number" id="pagar-dia" min="1" max="31" placeholder="Dia (Ex: 10)" required class="p-2.5 bg-white border border-gray-200 rounded-xl text-sm w-full outline-none">
+                        <input type="date" id="pagar-data" required class="p-2.5 bg-white border border-gray-200 rounded-xl text-xs w-full text-gray-700 outline-none">
                     </div>
                 </div>
                 
@@ -201,7 +202,6 @@
             </div>
         </section>
 
-        <!-- NOVO: SISTEMA DE FILTROS DO HISTÓRICO -->
         <section class="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 space-y-3">
             <h3 class="text-sm font-black text-gray-800 uppercase tracking-wide"><i class="fa-solid fa-filter mr-2 text-blue-500"></i>Filtros e Busca</h3>
             <div class="grid grid-cols-2 gap-2">
@@ -264,7 +264,6 @@
             </div>
         </section>
 
-        <!-- NOVO: METAS DE ECONOMIA MENSAL -->
         <section class="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 space-y-3">
             <div class="flex justify-between items-center">
                 <h3 class="text-sm font-black text-gray-800 uppercase tracking-wide"><i class="fa-solid fa-bullseye mr-2 text-indigo-500"></i>Meta de Economia do Mês</h3>
@@ -309,7 +308,6 @@
                 <canvas id="graficoGastos"></canvas>
             </div>
 
-            <!-- NOVO: GRAFICO DE LINHA - EVOLUÇÃO PATRIMONIAL -->
             <div class="mt-6 pt-5 border-t border-gray-100">
                 <h4 class="text-xs font-black text-gray-500 uppercase tracking-wider mb-3"><i class="fa-solid fa-chart-line mr-1 text-emerald-500"></i> Tendência Patrimonial (Sobras)</h4>
                 <div class="w-full">
@@ -405,11 +403,10 @@
         let tipoAtual = 'despesa';
         let idContaPagarSelecionada = null; 
         let meuGrafico = null;
-        let meuGraficoLinha = null; // NOVO: Instância do gráfico de linha
+        let meuGraficoLinha = null; 
         let db = null; 
         let firebaseAtivo = false;
 
-        // Variaveis globais de saldo para o Dashboard ler
         let totalReserva = 0, totalProjetos = 0, totalInvestimentos = 0;
         let saldosBancosGlobais = {};
 
@@ -439,7 +436,6 @@
             document.getElementById('loading').style.opacity = '0';
             setTimeout(() => document.getElementById('loading').classList.add('hidden'), 500);
 
-            // Carrega valor da meta salva localmente
             if(localStorage.getItem('meta_economia_leandro')) {
                 document.getElementById('input-meta').value = localStorage.getItem('meta_economia_leandro');
             }
@@ -493,18 +489,10 @@
             atualizarInterfaceGlobal();
         }
 
-        // NOVO: Função para salvar meta de economia
         function salvarMeta() {
             const val = document.getElementById('input-meta').value;
             localStorage.setItem('meta_economia_leandro', val);
             renderizarDashboard();
-        }
-
-        function atualizarInterfaceGlobal() {
-            calcularFinancas();
-            renderizarHistorico();
-            renderizarContasPagar();
-            renderizarDashboard(); 
         }
 
         function getMesAnoDaTransacao(tData) {
@@ -610,10 +598,10 @@
             document.getElementById('caixa-projetos').innerText = formatarMoeda(projetos);
             document.getElementById('caixa-investimentos').innerText = formatarMoeda(investimentos);
 
+            saldosBancosGlobais = saldosBancos;
             totalReserva = reserva;
             totalProjetos = projetos;
             totalInvestimentos = investimentos;
-            saldosBancosGlobais = saldosBancos;
 
             renderizarPainelBancos(saldosBancos);
             atualizarSelectBancos();
@@ -659,17 +647,28 @@
         });
         function deletarConta(id) { if(confirm("Remover esse banco?")) { contasBancarias = contasBancarias.filter(c => c.id !== id); salvarEAtualizar(); } }
 
+        // MODIFICADO: Função salva com base no novo input de data completa do calendário
         document.getElementById('form-conta-pagar').addEventListener('submit', function(e) {
             e.preventDefault(); 
             const tipo = document.querySelector('input[name="tipo-conta-pagar"]:checked').value;
-            const novaConta = { id: Date.now(), tipo: tipo, nome: document.getElementById('pagar-nome').value, valor: parseFloat(document.getElementById('pagar-valor').value), diaVencimento: parseInt(document.getElementById('pagar-dia').value), statusMes: null, transacaoId: null };
+            const dataSelecionada = document.getElementById('pagar-data').value;
+
+            const novaConta = { 
+                id: Date.now(), 
+                tipo: tipo, 
+                nome: document.getElementById('pagar-nome').value, 
+                valor: parseFloat(document.getElementById('pagar-valor').value), 
+                dataVencimento: dataSelecionada, 
+                statusMes: null, 
+                transacaoId: null 
+            };
             
             if(tipo === 'parcelada') { 
                 novaConta.totalParcelas = parseInt(document.getElementById('pagar-total-parc').value) || 1; 
                 novaConta.parcelasPagas = parseInt(document.getElementById('pagar-pagas-parc').value) || 0; 
             }
             contasPagar.push(novaConta);
-            document.getElementById('pagar-nome').value = ''; document.getElementById('pagar-valor').value = ''; document.getElementById('pagar-dia').value = '';
+            document.getElementById('pagar-nome').value = ''; document.getElementById('pagar-valor').value = ''; document.getElementById('pagar-data').value = '';
             toggleFormContaPagar(); salvarEAtualizar();
         });
         function deletarContaPagar(id) { if(confirm("Excluir essa conta da agenda?")) { contasPagar = contasPagar.filter(item => item.id !== id); salvarEAtualizar(); } }
@@ -726,25 +725,25 @@
             }
         }
 
+        // MODIFICADO: Renderização da Agenda lê o objeto de data real completo de forma nativa e limpa
         function renderizarContasPagar() {
             const container = document.getElementById('lista-contas-pagar'); container.innerHTML = '';
-            let ativas = contasPagar.filter(c => { if(c.tipo === 'fixa') return true; const pagouEsteMes = c.statusMes === mesAtualStr; return !(c.parcelasPagas >= c.totalParcelas && !pagouEsteMes); }).sort((a, b) => a.diaVencimento - b.diaVencimento);
+            let ativas = contasPagar.filter(c => { if(c.tipo === 'fixa') return true; const pagouEsteMes = c.statusMes === mesAtualStr; return !(c.parcelasPagas >= c.totalParcelas && !pagouEsteMes); }).sort((a, b) => new Date(a.dataVencimento) - new Date(b.dataVencimento));
             
             let totalPendente = 0;
-            const anoAtual = dataHoje.getFullYear();
-            const mesAtualZeroIndex = dataHoje.getMonth();
 
             ativas.forEach(c => {
-                const pagouEsteMes = c.statusMes === mesAtualStr; const estaAtrasada = !pagouEsteMes && c.diaVencimento < diaHoje; 
+                const pagouEsteMes = c.statusMes === mesAtualStr; 
+                const dataVencObjeto = new Date(c.dataVencimento + 'T00:00:00');
+                const estaAtrasada = !pagouEsteMes && dataVencObjeto < new Date(dataHoje.setHours(0,0,0,0));
+                
                 if(!pagouEsteMes) totalPendente += c.valor;
                 
                 let classeFundo = pagouEsteMes ? 'border-indigo-100 bg-indigo-50/50' : estaAtrasada ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-white';
                 let classeTexto = pagouEsteMes ? 'line-through text-indigo-300' : 'text-gray-800'; 
                 let classeBotao = pagouEsteMes ? 'text-indigo-400' : 'text-gray-300 hover:text-indigo-500';
                 
-                const strDia = String(c.diaVencimento).padStart(2, '0');
-                const strMes = String(mesAtualZeroIndex + 1).padStart(2, '0');
-                const dataFormatadaVenc = `${strDia}/${strMes}/${anoAtual}`;
+                const dataFormatadaVenc = dataVencObjeto.toLocaleDateString('pt-BR');
 
                 let badgeVencimento = estaAtrasada ? `<span class="bg-red-500 text-white text-[9px] px-1.5 py-0.5 rounded ml-2 font-black uppercase">Atrasou (${dataFormatadaVenc})</span>` : `<span class="bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded ml-2 font-bold">${dataFormatadaVenc}</span>`;
                 let badgeParcela = c.tipo === 'parcelada' ? `<span class="bg-purple-100 text-purple-700 text-[9px] px-1.5 py-0.5 rounded ml-1 font-bold">${pagouEsteMes ? c.parcelasPagas : Math.min(c.parcelasPagas + 1, c.totalParcelas)}/${c.totalParcelas}</span>` : '';
@@ -756,7 +755,6 @@
             document.getElementById('resumo-fixo-pendente').innerText = formatarMoeda(totalPendente);
         }
 
-        // MELHORIA: Renderizar histórico aplicando os novos filtros de Busca, Categoria e Período
         function renderizarHistorico() {
             const container = document.getElementById('historico'); container.innerHTML = '';
             
@@ -765,13 +763,9 @@
             const periodoFiltro = document.getElementById('filtro-periodo').value;
 
             let transacoesFiltradas = transacoes.filter(t => {
-                // 1. Filtro de Texto
                 if(buscaTxt && !t.descricao.toLowerCase().includes(buscaTxt)) return false;
-                
-                // 2. Filtro de Categoria
                 if(catFiltro && t.categoria !== catFiltro) return false;
 
-                // 3. Filtro de Período
                 if(periodoFiltro !== 'todos') {
                     const dataT = new Date(t.data + 'T00:00:00');
                     const diffTempo = Math.abs(dataHoje - dataT);
@@ -819,13 +813,9 @@
             });
         }
 
-        // =========================================================
-        // DASHBOARD - CÓDIGO MELHORADO COM RAIO-X, PORCENTAGEM E NOVO GRÁFICO DE LINHA
-        // =========================================================
         function renderizarDashboard() {
             if(document.getElementById('view-dash').classList.contains('hidden')) return;
 
-            // 1. CARREGAR PATRIMÔNIO ATUAL NA TELA
             let htmlPatrimonio = '';
             contasBancarias.forEach(c => {
                 let icone = c.id === 'din' ? 'fa-money-bill-wave text-emerald-500' : 'fa-building-columns text-blue-500';
@@ -852,7 +842,6 @@
             `;
             document.getElementById('dash-patrimonio-lista').innerHTML = htmlPatrimonio;
 
-            // 2. LÓGICA DO MÊS ESPECÍFICO
             let resumoMensal = {};
             let optionsFiltro = new Set();
             let transacoesDoMesDetalhes = {};
@@ -886,7 +875,6 @@
 
             const mesFiltrado = selectFiltro.value;
 
-            // Insights
             let maxGasto = 0; let mesMaxGasto = "---";
             let maxSobra = 0; let mesMaxSobra = "---";
             for(let mes in resumoMensal) {
@@ -900,14 +888,12 @@
             document.getElementById('insight-melhor-mes').innerText = mesMaxSobra;
             document.getElementById('insight-melhor-valor').innerText = maxSobra > 0 ? `+ ${formatarMoeda(maxSobra)}` : "Sem sobras";
 
-            // Resumo topo (receitas/despesas/sobra)
             const dadosMes = resumoMensal[mesFiltrado] || { rec: 0, desp: 0 };
             const sobraNoMesFiltrado = dadosMes.rec - dadosMes.desp;
             document.getElementById('dash-mes-rec').innerText = formatarMoeda(dadosMes.rec);
             document.getElementById('dash-mes-desp').innerText = formatarMoeda(dadosMes.desp);
             document.getElementById('dash-mes-sobra').innerText = formatarMoeda(sobraNoMesFiltrado);
 
-            // MELHORIA: Renderizar a barra de metas com base no valor que sobrou
             const valorMeta = parseFloat(document.getElementById('input-meta').value) || 0;
             if(valorMeta > 0) {
                 document.getElementById('container-meta-progresso').classList.remove('hidden');
@@ -921,7 +907,6 @@
                 document.getElementById('container-meta-progresso').classList.add('hidden');
             }
 
-            // Gráfico e Lista Raio-X
             const categoriasGrafico = {}; 
             transacoes.forEach(t => { 
                 const mesA = getMesAnoDaTransacao(t.data); 
@@ -996,7 +981,6 @@
                 });
             }
 
-            // MELHORIA: Renderizar o novo gráfico de linha de Tendência Patrimonial
             const mesesOrdenados = Object.keys(resumoMensal).sort((a, b) => {
                 const partsA = resumoMensal[a].keyReal.split('-');
                 const partsB = resumoMensal[b].keyReal.split('-');
